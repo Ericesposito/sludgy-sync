@@ -1,0 +1,34 @@
+# Node.js (Backend)
+backend/node_modules/
+backend/.env
+backend/package-lock.json
+backend/logs/
+backend/temp/
+
+# React/Next.js (Frontend)
+frontend/node_modules/
+frontend/.next/
+frontend/package-lock.json
+frontend/.env.local
+
+# Video Storage (For local testing)
+storage/
+*.mp4
+*.m3u8
+*.webm
+
+# FFmpeg Generated Files
+*.log
+*.tmp
+*.chunk
+*.mpd
+*.key
+
+# OS/System Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Docker (if used)
+docker-compose.override.yml
