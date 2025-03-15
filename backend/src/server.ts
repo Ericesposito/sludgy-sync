@@ -14,7 +14,9 @@ const io = new Server(server, {
   cors: { origin: '*' },
 });
 
-let videoState = { isPlaying: false, timestamp: 0 };
+const roomStates: {
+  [key: string]: { videoIsPlaying: boolean; timestamp: number };
+} = {};
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
@@ -22,24 +24,36 @@ io.on('connection', (socket) => {
   socket.on('joinRoom', (roomId) => {
     socket.join(roomId);
     console.log(`User ${socket.id} joined room ${roomId}`);
+
+    if (!roomStates[roomId]) {
+      roomStates[roomId] = { videoIsPlaying: false, timestamp: 0 };
+    }
+
+    io.to(roomId).emit('sync', roomStates[roomId]);
   });
 
-  // Sync new users to the current video state
-  socket.emit('sync', videoState);
-
   socket.on('play', (time) => {
-    videoState = { isPlaying: true, timestamp: time };
-    io.emit('play', time);
+    const roomId = Array.from(socket.rooms)[1]; // Get the room ID
+    if (!roomId) return;
+
+    roomStates[roomId] = { videoIsPlaying: true, timestamp: time };
+    io.to(roomId).emit('play', time);
   });
 
   socket.on('pause', (time) => {
-    videoState = { isPlaying: false, timestamp: time };
-    io.emit('pause', time);
+    const roomId = Array.from(socket.rooms)[1];
+    if (!roomId) return;
+
+    roomStates[roomId] = { videoIsPlaying: false, timestamp: time };
+    io.to(roomId).emit('pause', time);
   });
 
   socket.on('seek', (time) => {
-    videoState.timestamp = time;
-    io.emit('seek', time);
+    const roomId = Array.from(socket.rooms)[1];
+    if (!roomId) return;
+
+    roomStates[roomId].timestamp = time;
+    io.to(roomId).emit('seek', time);
   });
 
   socket.on('disconnect', () => {
