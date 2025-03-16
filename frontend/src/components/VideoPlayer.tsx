@@ -1,20 +1,18 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import io from 'socket.io-client';
 import { useParams } from 'next/navigation';
+import socket from '@/utils/socket';
 
-const socket = io('http://localhost:1247');
-
-export default function WatchParty({ videoUrl }: { videoUrl: string }) {
+export default function VideoPlayer({ videoUrl }: { videoUrl: string }) {
   const { roomId } = useParams();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
-  const [isHost, setIsHost] = useState(false);
   const [userInteracted, setUserInteracted] = useState(false);
-  const [localIsPlaying, setLocalIsPlaying] = useState(false);
   const [lastSyncedTime, setLastSyncedTime] = useState(0);
+  const isLocalSeek = useRef(false);
 
+  // Initialize HLS
   useEffect(() => {
     if (!videoRef.current || hlsRef.current) return;
 
@@ -22,13 +20,44 @@ export default function WatchParty({ videoUrl }: { videoUrl: string }) {
     const hls = new Hls();
     hlsRef.current = hls;
 
-    // ✅ Only load the first available level
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      console.log('HLS Manifest Loaded:', hls.levels);
-      hls.autoLevelCapping = 2;
+      // Log available quality levels
+      console.log(
+        'Available quality levels:',
+        hls.levels.map((level, index) => ({
+          index,
+          height: level.height,
+          width: level.width,
+          bitrate: level.bitrate,
+        }))
+      );
+
+      // Allow all quality levels
+      hls.autoLevelCapping = -1;
+
       if (hls.levels.length > 0) {
-        hls.currentLevel = 0; // Start with the lowest quality to prevent excessive requests
+        // Start with higher quality (usually 720p)
+        // Level 2 is typically 720p in most HLS streams
+        const targetLevel = Math.min(2, hls.levels.length - 1);
+        hls.currentLevel = targetLevel;
+
+        console.log('Starting playback at quality level:', {
+          level: targetLevel,
+          height: hls.levels[targetLevel].height,
+          width: hls.levels[targetLevel].width,
+          bitrate: hls.levels[targetLevel].bitrate,
+        });
       }
+    });
+
+    // Log quality level changes
+    hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+      const newLevel = hls.levels[data.level];
+      console.log('Quality level changed:', {
+        height: newLevel.height,
+        width: newLevel.width,
+        bitrate: newLevel.bitrate,
+      });
     });
 
     hls.on(Hls.Events.ERROR, (event, data) => {
@@ -54,106 +83,133 @@ export default function WatchParty({ videoUrl }: { videoUrl: string }) {
     hls.loadSource(videoUrl);
     hls.attachMedia(video);
 
-    const tryPlay = (time: number) => {
-      if (userInteracted && video.paused) {
-        console.log('Received play request, playing video at: ', time);
-        video.currentTime = time;
-        video
-          .play()
-          .then(() => setLocalIsPlaying(true))
-          .catch((err) => console.error('Autoplay blocked: ', err));
+    return () => {
+      hls.destroy();
+      hlsRef.current = null;
+    };
+  }, [videoUrl]);
+
+  // Socket connection and event handlers
+  useEffect(() => {
+    if (!videoRef.current || !roomId || !userInteracted) return;
+
+    const video = videoRef.current;
+
+    if (!socket.connected) {
+      socket.connect();
+    }
+
+    socket.emit('joinRoom', roomId);
+
+    const handleRemotePlay = (time: number) => {
+      console.log('Received play event at:', time);
+      if (!isLocalSeek.current) {
+        if (Number.isFinite(time)) {
+          video.currentTime = time;
+        } else {
+          console.warn('Received invalid play time:', time);
+        }
+        video.play().catch((err) => console.error('Play failed:', err));
       }
+      isLocalSeek.current = false;
     };
 
-    const tryPause = (time: number) => {
-      if (!video.paused) {
-        console.log('Received pause request, pausing video at: ', time);
-        video.currentTime = time;
+    const handleRemotePause = (time: number) => {
+      console.log('Received pause event at:', time);
+      if (!isLocalSeek.current) {
+        if (Number.isFinite(time)) {
+          video.currentTime = time;
+        } else {
+          console.warn('Received invalid pause time:', time);
+        }
         video.pause();
-        setLocalIsPlaying(false);
       }
+      isLocalSeek.current = false;
     };
 
-    const trySeek = (time: number) => {
-      if (Math.abs(video.currentTime - time) > 0.5) {
+    const handleRemoteSeek = (time: number) => {
+      console.log('Received seek event at:', time);
+      if (!Number.isFinite(time)) {
+        console.warn('Received invalid seek time:', time);
+        return;
+      }
+      if (!isLocalSeek.current && Math.abs(video.currentTime - time) > 0.5) {
         video.currentTime = time;
-        setLastSyncedTime(time);
       }
+      isLocalSeek.current = false;
     };
 
-    const trySync = ({
+    const handleRemoteSync = ({
       videoIsPlaying,
       timestamp,
     }: {
       videoIsPlaying: boolean;
       timestamp: number;
     }) => {
-      console.log('[WebSocket] Received sync event:', {
-        videoIsPlaying,
-        timestamp,
-      });
-      if (videoIsPlaying && !localIsPlaying) {
-        tryPlay(timestamp);
-      } else if (!videoIsPlaying && localIsPlaying) {
-        tryPause(timestamp);
+      console.log('Received sync event:', { videoIsPlaying, timestamp });
+      if (Number.isFinite(timestamp)) {
+        video.currentTime = timestamp;
+      } else {
+        console.warn('Received invalid sync timestamp:', timestamp);
+      }
+      if (videoIsPlaying && video.paused) {
+        video.play().catch((err) => console.error('Sync play failed:', err));
+      } else if (!videoIsPlaying && !video.paused) {
+        video.pause();
       }
     };
 
-    socket.emit('joinRoom', roomId);
-
-    socket.on('sync', trySync);
-    socket.on('play', tryPlay);
-    socket.on('pause', tryPause);
-    socket.on('seek', trySeek);
+    socket.on('play', handleRemotePlay);
+    socket.on('pause', handleRemotePause);
+    socket.on('seek', handleRemoteSeek);
+    socket.on('sync', handleRemoteSync);
 
     return () => {
-      socket.off('play', tryPlay);
-      socket.off('pause', tryPause);
-      socket.off('seek', trySeek);
-      socket.off('sync', trySync);
+      socket.off('play', handleRemotePlay);
+      socket.off('pause', handleRemotePause);
+      socket.off('seek', handleRemoteSeek);
+      socket.off('sync', handleRemoteSync);
     };
-  }, [videoUrl, userInteracted, localIsPlaying, roomId]);
+  }, [roomId, userInteracted]);
 
   const handleUserInteraction = () => setUserInteracted(true);
 
-  const handlePlay = () => {
-    if (userInteracted && videoRef.current && !localIsPlaying) {
-      console.log('Emitting play event at: ', videoRef.current.currentTime);
-      socket.emit('play', videoRef.current.currentTime);
-      setLocalIsPlaying(true);
-    }
+  const handleLocalPlay = () => {
+    if (!userInteracted || !videoRef.current) return;
+    isLocalSeek.current = true;
+    socket.emit('play', videoRef.current.currentTime);
   };
 
-  const handlePause = () => {
-    if (userInteracted && videoRef.current && localIsPlaying) {
-      console.log('Emitting pause event at: ', videoRef.current.currentTime);
-      socket.emit('pause', videoRef.current.currentTime);
-      setLocalIsPlaying(false);
-    }
+  const handleLocalPause = () => {
+    if (!userInteracted || !videoRef.current) return;
+    isLocalSeek.current = true;
+    socket.emit('pause', videoRef.current.currentTime);
   };
 
-  const handleSeek = () => {
-    if (userInteracted && videoRef.current) {
-      const newTime = videoRef.current.currentTime;
-      if (Math.abs(newTime - lastSyncedTime) > 0.5) {
-        console.log('Emitting seek event at: ', newTime);
-        socket.emit('seek', newTime);
-        setLastSyncedTime(newTime);
-      }
+  const handleLocalSeek = () => {
+    if (!userInteracted || !videoRef.current) return;
+    const newTime = videoRef.current.currentTime;
+    if (Math.abs(newTime - lastSyncedTime) > 0.5) {
+      isLocalSeek.current = true;
+      socket.emit('seek', newTime);
+      setLastSyncedTime(newTime);
     }
   };
 
   return (
-    <div onClick={handleUserInteraction} onKeyDown={handleUserInteraction}>
-      <h1>Room ID: {roomId}</h1>
+    <div
+      onClick={handleUserInteraction}
+      onKeyDown={handleUserInteraction}
+      className="relative w-full aspect-video bg-black rounded-lg overflow-hidden"
+    >
       <video
         ref={videoRef}
         controls
-        onPlay={handlePlay}
-        onPause={handlePause}
-        onSeeked={handleSeek}
+        className="w-full h-full"
+        onPlay={handleLocalPlay}
+        onPause={handleLocalPause}
+        onSeeked={handleLocalSeek}
       ></video>
-      <button onClick={() => setIsHost(!isHost)}>Toggle Host</button>
     </div>
   );
 }

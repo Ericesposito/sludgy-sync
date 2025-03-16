@@ -1,8 +1,5 @@
-import React from 'react';
-import VideoPlayer from '@/components/VideoPlayer';
+import CreateRoom from '@/components/home/CreateRoom';
 
 export default function Home() {
-  return (
-    <VideoPlayer videoUrl="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8" />
-  );
+  return <CreateRoom />;
 }
