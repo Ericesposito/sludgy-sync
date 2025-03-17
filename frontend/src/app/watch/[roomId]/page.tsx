@@ -4,15 +4,17 @@ import { useParams } from 'next/navigation';
 import VideoPlayer from '@/components/VideoPlayer';
 import UserList from '@/components/watch/UserList';
 import { joinRoom } from '@/utils/socket';
+import { useUser } from '@/contexts/UserContext';
 
 export default function WatchRoom() {
   const { roomId } = useParams();
+  const { user } = useUser();
 
   useEffect(() => {
-    if (roomId) {
-      joinRoom(roomId.toString());
+    if (roomId && user) {
+      joinRoom(roomId.toString(), user.username);
     }
-  }, [roomId]);
+  }, [roomId, user]);
 
   return (
     <div className="container mx-auto p-4">

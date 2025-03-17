@@ -2,11 +2,16 @@
 import { useEffect, useState } from 'react';
 import socket from '@/utils/socket';
 
+interface User {
+  id: string;
+  username: string;
+}
+
 export default function UserList() {
-  const [users, setUsers] = useState<string[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
 
   useEffect(() => {
-    const handleUpdateUsers = (updatedUsers: string[]) => {
+    const handleUpdateUsers = (updatedUsers: User[]) => {
       setUsers(updatedUsers);
     };
 
@@ -23,10 +28,10 @@ export default function UserList() {
       <ul className="space-y-1">
         {users.map((user) => (
           <li
-            key={user}
+            key={user.id}
             className="bg-gray-700 px-3 py-2 rounded shadow-sm hover:bg-gray-600 transition-colors"
           >
-            {user}
+            {user.username}
           </li>
         ))}
       </ul>
