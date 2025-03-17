@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import HLSPlayer from './video/HLSPlayer';
 import SyncController from './video/SyncController';
 import UsernameModal from './UsernameModal';
+import ReadyOverlay from './video/ReadyOverlay';
 import { useUser } from '@/contexts/UserContext';
 
 export default function VideoPlayer({ videoUrl }: { videoUrl: string }) {
@@ -18,16 +19,14 @@ export default function VideoPlayer({ videoUrl }: { videoUrl: string }) {
     userInteracted,
   });
 
-  const handleUserInteraction = () => setUserInteracted(true);
+  const handleUserReady = () => {
+    setUserInteracted(true);
+  };
 
   return (
     <>
       <UsernameModal />
-      <div
-        onClick={handleUserInteraction}
-        onKeyDown={handleUserInteraction}
-        className="relative w-full aspect-video bg-black rounded-lg overflow-hidden"
-      >
+      <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
         {user && <HLSPlayer videoUrl={videoUrl} videoRef={videoRef} />}
         <video
           ref={videoRef}
@@ -37,6 +36,9 @@ export default function VideoPlayer({ videoUrl }: { videoUrl: string }) {
           onPause={handlePause}
           onSeeked={handleSeek}
         />
+        {!userInteracted && user && (
+          <ReadyOverlay onAllUsersReady={handleUserReady} />
+        )}
       </div>
     </>
   );
