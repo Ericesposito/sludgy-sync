@@ -1,7 +1,10 @@
+export type UserRole = 'spectator' | 'participant';
+
 export interface RoomUser {
   id: string;
   username: string;
   ready: boolean;
+  role: UserRole;
 }
 
 export interface RoomState {
@@ -30,4 +33,15 @@ export interface TimeEvent {
 export interface ReadyEvent {
   username: string;
   ready: boolean;
+}
+
+export interface RoleRequestEvent {
+  username: string;
+  requestedRole: UserRole;
+}
+
+export interface RoleUpdateEvent {
+  userId: string;
+  username: string;
+  role: UserRole;
 }

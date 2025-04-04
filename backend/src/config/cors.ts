@@ -4,21 +4,13 @@ export const allowedOrigins = [
 ];
 
 export const corsOptions = {
-  origin: (
-    origin: string | undefined,
-    callback: (err: Error | null, origin?: string) => void
-  ) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, origin);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   credentials: true,
 };
 
 export const socketCorsOptions = {
-  origin: corsOptions.origin,
+  origin: allowedOrigins,
   methods: ['GET', 'POST'],
+  credentials: true,
 };

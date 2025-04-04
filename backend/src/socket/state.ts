@@ -1,4 +1,4 @@
-import { RoomStates, RoomUser } from '../types/room';
+import { RoomStates, RoomUser, UserRole } from '../types/room';
 
 class RoomStateManager {
   private roomStates: RoomStates = {};
@@ -15,10 +15,21 @@ class RoomStateManager {
     return this.roomStates[roomId];
   }
 
-  addUser(roomId: string, user: RoomUser) {
+  addUser(roomId: string, user: Omit<RoomUser, 'ready' | 'role'>) {
     const room = this.initRoom(roomId);
     if (!room.users.some((u) => u.id === user.id)) {
-      room.users.push({ ...user, ready: false });
+      // If room is empty or not playing, join as participant
+      // Otherwise, join as spectator
+      const role: UserRole =
+        room.users.length === 0 || !room.videoIsPlaying
+          ? 'participant'
+          : 'spectator';
+
+      room.users.push({
+        ...user,
+        ready: false,
+        role,
+      });
     }
     return room;
   }
@@ -70,8 +81,25 @@ class RoomStateManager {
     if (!room) return null;
 
     const user = room.users.find((u) => u.id === socketId);
-    if (user) {
+    if (user && user.role === 'participant') {
       user.ready = ready;
+      this.updateAllUsersReadyState(roomId);
+    }
+
+    return room;
+  }
+
+  updateUserRole(roomId: string, socketId: string, role: UserRole) {
+    const room = this.roomStates[roomId];
+    if (!room) return null;
+
+    const user = room.users.find((u) => u.id === socketId);
+    if (user) {
+      user.role = role;
+      // If becoming a spectator, set ready to false
+      if (role === 'spectator') {
+        user.ready = false;
+      }
       this.updateAllUsersReadyState(roomId);
     }
 
@@ -82,8 +110,10 @@ class RoomStateManager {
     const room = this.roomStates[roomId];
     if (!room) return;
 
+    // Only consider participants for ready state
+    const participants = room.users.filter((u) => u.role === 'participant');
     room.allUsersReady =
-      room.users.length > 0 && room.users.every((u) => u.ready);
+      participants.length > 0 && participants.every((u) => u.ready);
   }
 
   getRoom(roomId: string) {

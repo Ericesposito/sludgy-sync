@@ -1,6 +1,12 @@
 import { Server, Socket } from 'socket.io';
 import { roomStateManager } from './state';
-import { SyncEvent, TimeEvent, ReadyEvent } from '../types/room';
+import {
+  SyncEvent,
+  TimeEvent,
+  ReadyEvent,
+  RoleRequestEvent,
+  RoleUpdateEvent,
+} from '../types/room';
 
 export function setupSocketHandlers(io: Server) {
   io.on('connection', (socket: Socket) => {
@@ -13,7 +19,6 @@ export function setupSocketHandlers(io: Server) {
       const room = roomStateManager.addUser(roomId, {
         id: socket.id,
         username,
-        ready: false,
       });
 
       // Send initial sync to the joining user
@@ -30,6 +35,39 @@ export function setupSocketHandlers(io: Server) {
         allUsersReady: room.allUsersReady,
       });
     });
+
+    socket.on(
+      'requestRole',
+      ({ username, requestedRole }: RoleRequestEvent) => {
+        const roomId = Array.from(socket.rooms)[1];
+        if (!roomId) return;
+
+        const room = roomStateManager.getRoom(roomId);
+        if (!room) return;
+
+        // For now, automatically approve role changes
+        // In the future, this could be handled by room owner/participants
+        const updatedRoom = roomStateManager.updateUserRole(
+          roomId,
+          socket.id,
+          requestedRole
+        );
+        if (!updatedRoom) return;
+
+        // Notify the user of their role update
+        socket.emit('roleUpdate', {
+          userId: socket.id,
+          username,
+          role: requestedRole,
+        });
+
+        // Update all users about the new user list
+        io.to(roomId).emit('updateUsers', {
+          users: updatedRoom.users,
+          allUsersReady: updatedRoom.allUsersReady,
+        });
+      }
+    );
 
     socket.on('ready', ({ username, ready }: ReadyEvent) => {
       const roomId = Array.from(socket.rooms)[1];
@@ -50,7 +88,11 @@ export function setupSocketHandlers(io: Server) {
       if (!roomId) return;
 
       const room = roomStateManager.getRoom(roomId);
-      if (!room || !room.allUsersReady) return;
+      if (!room) return;
+
+      // Only allow participants to control playback
+      const user = room.users.find((u) => u.id === socket.id);
+      if (!user || user.role !== 'participant') return;
 
       roomStateManager.updatePlayState(roomId, true, time);
 
@@ -76,7 +118,11 @@ export function setupSocketHandlers(io: Server) {
       if (!roomId) return;
 
       const room = roomStateManager.getRoom(roomId);
-      if (!room || !room.allUsersReady) return;
+      if (!room) return;
+
+      // Only allow participants to control playback
+      const user = room.users.find((u) => u.id === socket.id);
+      if (!user || user.role !== 'participant') return;
 
       roomStateManager.updatePlayState(roomId, false, time);
 
@@ -102,7 +148,11 @@ export function setupSocketHandlers(io: Server) {
       if (!roomId) return;
 
       const room = roomStateManager.getRoom(roomId);
-      if (!room || !room.allUsersReady) return;
+      if (!room) return;
+
+      // Only allow participants to control playback
+      const user = room.users.find((u) => u.id === socket.id);
+      if (!user || user.role !== 'participant') return;
 
       roomStateManager.updateTimestamp(roomId, time);
 

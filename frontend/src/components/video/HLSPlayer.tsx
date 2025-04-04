@@ -14,7 +14,11 @@ export default function HLSPlayer({ videoUrl, videoRef }: HLSPlayerProps) {
     if (!videoRef.current || hlsRef.current) return;
 
     const video = videoRef.current;
-    const hls = new Hls();
+    const hls = new Hls({
+      xhrSetup: (xhr) => {
+        xhr.withCredentials = false; // Disable credentials for cross-origin requests
+      },
+    });
     hlsRef.current = hls;
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
